@@ -40,29 +40,15 @@ export CROSS_COMPILE=/home/kim/aurix-tc4d7/toolchain/tricore-gcc-11.3.0/bin/tric
 
 `scripts/30-build-app.sh` 가 설정해준다.
 
-## 미해결: 굽는 방법
+## 굽는 방법은 별개 문제
 
-빌드와 별개 문제다. 벤더 Zephyr 의 보드 정의:
+**빌드가 된다는 것과 보드에서 돌아간다는 것은 다르다.** 벤더 보드 정의의 flash runner 가
+winIDEA(상용/Windows)라서 `west flash` 가 Linux 에서 안 된다.
 
-```cmake
-# boards/infineon/kit_a3g_tc4d7_lite/board.cmake
-board_set_flasher_ifnset(winidea)
-board_finalize_runner_args(winidea)
-```
+이게 이 프로젝트의 실질적 관문이고, **툴체인 빌드보다 먼저 뚫어야 한다** —
+막히면 툴체인 빌드에 쓴 시간이 버려진다.
 
-**flash runner 가 `winidea`** — iSYSTEM winIDEA, 상용 도구다. 즉 `west flash` 는 Linux 에서
-바로 안 된다. **빌드는 되지만 굽는 건 안 된다.**
-
-후보 (전부 미검증):
-
-1. **Infineon TAS Tool Interface** — DAS 와 달리 Linux 서버 바이너리가 있다
-   (`sudo TAS_V*/bin/tas_server`). 보고된 사례는 **TC3xx** 뿐, TC4x 미확인
-2. **aurix-openocd** — TAS 와 조합한 TC3xx 사례가 블로그로 존재. TC4x 미확인
-3. **ASC BSL (부트스트랩 로더)** — 보드가 `HWCFG[3..4]=00` 이면 P14.0/P14.1 의 generic BSL,
-   `10` 이면 P15.2/3 의 ASC BSL 로 부팅한다. **ttyUSB0 가 곧 ASCLIN0** 이므로
-   디버거 없이 UART 로 굽는 경로가 원리적으로 존재한다. 프로토콜 문서 확인 필요.
-   → 순수 Linux + 케이블 없이 가능한 유일한 후보라 **우선 조사 대상**
-4. **DAP over FT2232H** — miniWiggler 채널 A 를 직접 구동. DAS 프로토콜 리버싱 필요, 비용 큼
+→ **[flashing.md](flashing.md)** 에 후보 4개와 우선순위를 정리했다.
 
 ## 미해결: QEMU
 

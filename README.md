@@ -3,6 +3,21 @@
 Infineon **KIT_A3G_TC4D7_LITE** (AURIX TC4Dx, TriCore 1.8P) 를 **Linux 호스트에서** 개발하기
 위한 작업 레포. Windows 전용 AURIX Development Studio / DAS 를 쓰지 않는 경로를 목표로 한다.
 
+> **판정 (2026-09-04)**: 원래 목표였던 **TSN 트래픽 제너레이터로는 쓸 수 없다.**
+> 100 Mbps 천장(영구) + errata 가 정밀도를 깎음 + Zephyr 에 GETH 드라이버 없음.
+> 그리고 **굽는 경로가 미해결**이라 현재 보드에서 코드를 실행할 수 없다.
+> 근거와 재개 조건은 → **[STATUS.md](STATUS.md)**
+
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| **[STATUS.md](STATUS.md)** | 판정, 관문 순서, 확보된 것, 재개 조건, 용량 |
+| [docs/hardware.md](docs/hardware.md) | 기가비트 불가 근거(RMII 핀맵), 커넥터, 전원, 부트모드, LED/버튼 핀, 100M 성능 계산 |
+| [docs/errata.md](docs/errata.md) | GETH 실리콘 결함 — 10/100 MII 전용 2개 + TSN 결함 + RX DMA 스톨 계열 |
+| [docs/toolchain.md](docs/toolchain.md) | tricore-elf-gcc 후보 5개 비교, Zephyr 에 커스텀 GCC 물리기 |
+| [docs/flashing.md](docs/flashing.md) | **실질적 관문.** 굽는 경로 후보 4개와 우선순위 |
+
 ## 하드웨어 식별 (실측)
 
 USB 로 붙으면 이렇게 잡힌다:
@@ -22,35 +37,40 @@ Bus 001 Device 010: ID 058b:0043 Infineon Technologies DAS JDS AURIX LITE KIT V1
 
 | 기능 | 상태 | 경로 |
 |---|---|---|
-| LED · 버튼 · UART 콘솔 · Zephyr shell | 가능 | Zephyr (벤더 브랜치에 dts 완비) |
-| **CAN FD** (500 kbit/s arb + 2 Mbit/s data) | 가능 | Zephyr (`can01`, TLE9371 STB gpio-hog) |
-| I2C + 온보드 EEPROM(MAC ID) | 가능 | Zephyr (`i2c0`, 24AA02E48) |
-| 멀티코어 (cpu0~cpu5 + cpucs) | 가능 | Zephyr, 코어별 dts |
-| **이더넷 / TSN** | **불가** | Zephyr 에 GETH 드라이버 없음 → iLLD 베어메탈 필요 |
+| LED · 버튼 · UART 콘솔 · Zephyr shell | 코드 가능 | Zephyr (벤더 브랜치에 dts 완비) |
+| **CAN FD** (500 kbit/s arb + 2 Mbit/s data) | 코드 가능 | Zephyr (`can01`, TLE9371 STB gpio-hog) |
+| I2C + 온보드 EEPROM(MAC ID) | 코드 가능 | Zephyr (`i2c0`, 24AA02E48) |
+| I2C 센서 (예: LSM6DSL 계열 IMU) | 코드 가능 | Zephyr, 포크에 드라이버 있음 |
+| 멀티코어 (cpu0~cpu5 + cpucs) | 코드 가능 | Zephyr, 코어별 dts |
+| **이더넷 / TSN** | 불가 | Zephyr 에 GETH 드라이버 없음 → iLLD 베어메탈 필요 |
 | SPI | 불가 | Zephyr 에 AURIX SPI 드라이버 없음 |
-| 1 Gbps 이상 | **영구 불가** | 보드가 5G SerDes 를 안 뽑음 ([docs/hardware.md](docs/hardware.md)) |
+| BLE / WiFi | 불가 | TC4D7 에 무선이 없다 |
+| 1 Gbps 이상 | **영구 불가** | 보드가 5G SerDes 를 안 뽑음 |
+| **보드에서 실행** | **미해결** | flash runner 가 winIDEA (상용/Windows) |
 
-자세한 근거는 [docs/hardware.md](docs/hardware.md), 실리콘 결함은 [docs/errata.md](docs/errata.md).
+"코드 가능"은 **빌드까지**를 뜻한다. 실행은 굽는 경로가 뚫려야 한다.
 
 ## 시작하기
 
 ```bash
-scripts/00-check-env.sh        # 전제조건 확인 (west, cmake, ninja, dtc, 디스크)
-scripts/10-build-toolchain.sh  # tricore-elf-gcc 소스 빌드 (오래 걸림)
-scripts/20-init-workspace.sh   # Zephyr 워크스페이스 (Infineon 포크)
-scripts/30-build-app.sh apps/hello cpu0
+scripts/00-check-env.sh        # 전제조건 + 보드 연결 확인 (아무것도 변경하지 않는다)
+scripts/20-init-workspace.sh   # Zephyr 워크스페이스 (Infineon 포크 aurix 브랜치, 약 6.5 GB)
+scripts/10-build-toolchain.sh  # tricore-elf-gcc 소스 빌드 (오래 걸림, apt 의존성 필요)
+scripts/30-build-app.sh apps/blinky cpu0
+scripts/99-disk.sh             # 용량 리포트 (지우려면 --purge-ws)
 ```
 
-툴체인 선택지와 트레이드오프는 [docs/toolchain.md](docs/toolchain.md).
+sudo 가 필요한 것은 하나뿐이다:
 
-## 미해결 (순서대로 관문)
+```bash
+sudo apt install -y build-essential texinfo flex bison libgmp-dev libmpfr-dev libmpc-dev
+```
 
-1. **tricore-elf-gcc 확보** — prebuilt 배포본이 없다. 소스 빌드 또는 등록형 상용 툴체인
-2. **플래시 경로** — 벤더 Zephyr 의 `board.cmake` 가 flash runner 를 `winidea`
-   (iSYSTEM, 상용/Windows) 로 지정한다. Linux 에서 굽는 경로는 미해결
-3. **QEMU** — `qemu_tc4x` 타깃이 있지만 `qemu-system-tricore` 는 업스트림 QEMU 에 없다.
-   커스텀 빌드 필요
-4. **GETH 드라이버** — 이 보드 RJ45 를 쓰려면 직접 써야 한다 (아래 참고)
+## 이 레포의 Zephyr 는 별개 트리다
+
+이 머신에 이미 `~/zephyrproject` (Zephyr **3.7.3** LTS, nRF52840 작업용) 가 있지만
+**재사용할 수 없다.** Infineon 포크는 Zephyr **4.4.0** 기반이고 TriCore 아키텍처가
+업스트림에 아직 머지되지 않았다 (PR #107516, open). 두 워크스페이스는 독립적으로 공존한다.
 
 ## 참고
 
