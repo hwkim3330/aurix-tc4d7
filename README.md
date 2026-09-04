@@ -54,11 +54,16 @@ Bus 001 Device 010: ID 058b:0043 Infineon Technologies DAS JDS AURIX LITE KIT V1
 
 ```bash
 scripts/00-check-env.sh        # 전제조건 + 보드 연결 확인 (아무것도 변경하지 않는다)
+scripts/40-bsl-probe.py --watch 120   # ← 먼저 이걸 해라. 굽기가 뚫리는지 확인
 scripts/20-init-workspace.sh   # Zephyr 워크스페이스 (Infineon 포크 aurix 브랜치, 약 6.5 GB)
 scripts/10-build-toolchain.sh  # tricore-elf-gcc 소스 빌드 (오래 걸림, apt 의존성 필요)
 scripts/30-build-app.sh apps/blinky cpu0
 scripts/99-disk.sh             # 용량 리포트 (지우려면 --purge-ws)
 ```
+
+**번호 순서대로 하지 말 것.** `40` 을 먼저 해야 한다 — 굽는 경로가 안 뚫리면
+`10`(툴체인 소스 빌드)에 쓴 시간이 전부 버려진다. 이유는 [docs/flashing.md](docs/flashing.md).
+번호는 파이프라인 단계이고 실행 순서가 아니다.
 
 sudo 가 필요한 것은 하나뿐이다:
 
