@@ -1,0 +1,20 @@
+# Zephyr west workspace (수 GB, 재생성 가능)
+ws/
+
+# 툴체인 소스/빌드 트리와 설치본
+toolchain/
+
+# 빌드 산출물
+build/
+build-*/
+*.elf
+*.hex
+*.bin
+*.map
+
+# 로그
+*.log
+logs/
+
+__pycache__/
+.venv/
