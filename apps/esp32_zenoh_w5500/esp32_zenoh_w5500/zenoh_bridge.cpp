@@ -1,6 +1,7 @@
-// The two boards are wired back-to-back over Ethernet through a W5500
-// SPI-Ethernet module (no switch, no DHCP server) -- so both ends use static
-// IPs and an explicit Zenoh peer locator instead of multicast scouting.
+// ESP32-S3 + W5500, talking Zenoh to a peer on this PC over the Kontron D10
+// switch (same 192.168.100.0/24 subnet as the PC's enp4s0 -- see
+// afdx-jitter's D10 notes). No DHCP server on that segment, so a static IP
+// and an explicit peer locator instead of multicast scouting.
 //
 // zenoh-pico is vendored under ../lib/zenoh-pico (see
 // scripts/50-build-zenoh-arduino-lib.sh at the repo root) and pulled in via
@@ -26,14 +27,14 @@ W5500Spi *gW5500Spi = nullptr;  // defined here; w5500_spi.h only declares it ex
 // ---- W5500 SPI wiring (esp32-lidar/firmware/lidar_probe/lidar_probe.ino) ----
 constexpr int kSck = 48, kMosi = 21, kCs = 45, kMiso = 47;  // no INT, no RST wired
 
-// ---- Direct-link static addressing (AURIX side must use .1) ----
-static const IPAddress kLocalIP(192, 168, 50, 2);
+// ---- Kontron D10 segment addressing (PC's enp4s0 is 192.168.100.50) ----
+static const IPAddress kLocalIP(192, 168, 100, 60);
 static const IPAddress kMask(255, 255, 255, 0);
-static const IPAddress kGateway(192, 168, 50, 2);  // no router; loops to self
-#define AURIX_LOCATOR "udp/192.168.50.1:7447"
+static const IPAddress kGateway(192, 168, 100, 60);  // no router; loops to self
+#define PC_LOCATOR "udp/192.168.100.50:7447"
 
-#define PUB_KEYEXPR "aurix/bridge/esp32"
-#define SUB_KEYEXPR "aurix/bridge/**"
+#define PUB_KEYEXPR "bridge/esp32"
+#define SUB_KEYEXPR "bridge/**"
 
 static z_owned_session_t s_session;
 static z_owned_publisher_t s_pub;
@@ -61,7 +62,7 @@ static bool startZenoh() {
   z_owned_config_t config;
   z_config_default(&config);
   zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_MODE_KEY, "peer");
-  zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_CONNECT_KEY, AURIX_LOCATOR);
+  zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_CONNECT_KEY, PC_LOCATOR);
 
   Serial.print("[zenoh] opening session...");
   if (z_open(&s_session, z_config_move(&config), NULL) < 0) {

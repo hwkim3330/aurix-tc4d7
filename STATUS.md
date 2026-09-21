@@ -64,6 +64,19 @@ USB 케이블을 완전히 뽑았다 다시 꽂고, `/dev/bus/usb/001/0xx` 권�
 아직 못 버틴다.** 다음에 재개한다면 `tricore-oss/openocd` 에 이후 커밋(수정)이 있는지
 먼저 확인할 것 — 지금 커밋을 더 파고드는 건 시간 대비 소득이 낮다고 판단해 멈췄다.
 
+### 2026-09-21 — AURIX 대신 PC, Zenoh 왕복 실제로 확인함
+
+AURIX 가 막힌 동안 목표를 바꿔서 검증했다: ESP32(W5500) 를 AURIX 대신 **Kontron D10
+스위치**를 거쳐 이 PC 의 `enp4s0`(afdx-jitter 가 이미 D10 에 물려 쓰는 그 인터페이스,
+192.168.100.0/24) 에 붙였다. `zenoh_bridge.cpp` 의 고정 IP/피어 주소를
+AURIX 전용(192.168.50.x) 에서 이 서브넷(ESP32=.60, PC=.50)으로 바꾸고, PC 쪽은
+`eclipse-zenoh` 파이썬 바인딩으로 피어를 띄웠다(스크립트는 리포에 없음, 임시).
+
+**결과: 왕복 pub/sub 실증됨.** PC 로그에 ESP32 의 `bridge/esp32` 가, ESP32 시리얼 로그에
+PC 의 `bridge/pc` 가 서로 찍힌다 — zenoh-pico(ESP32, Arduino) ↔ zenoh 1.10.1(PC, Rust
+파이썬 바인딩) 간 프로토콜 호환도 확인됐다. AURIX 가 다시 살면 `PC_LOCATOR` 를
+AURIX IP 로 되돌리는 것만 남는다.
+
 ## 원래 목표와 판정 (2026-09-04, TSN 트래픽 젠 용도 — 아래는 그 판정만 다룬다)
 
 **목표**: LAN9662 / 9692 TSN 검증용 정밀 트래픽 제너레이터 (talker + 하드웨어 타임스탬프 listener)
