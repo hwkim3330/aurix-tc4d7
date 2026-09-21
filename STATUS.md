@@ -21,10 +21,8 @@
   `.lsl` 의 `pfls0_nc`)으로는 `TAS PL0 mem request failed` 로 실패한다.** 원인 미확인
   (OCDS 락 추정은 아님 — 캐시드 쪽은 halt 상태에서 바로 읽힘)
 - 비캐시드 주소 접근이 한 번 실패한 뒤로 세션이 `No targets to connect` 로 재연결이
-  안 된다. USB 리셋(`usbreset 058b:0043`)으로도 안 풀린다 — README 가 이미 적어 둔 대로
-  **`/PORST` 는 사람이 RESET 버튼을 눌러야 한다(소프트웨어 리셋 경로 없음)**. 재개하려면
-  이 버튼을 누른 뒤 `tools/das/... tas_server` 를 다시 띄우고 `0x80000000` 부터 다시
-  시도할 것 — `0xa0000000` 류 비캐시드 주소는 당분간 건드리지 말 것
+  안 됐다. **타겟 RESET 버튼과 `usbreset`으로는 안 풀렸다** — 실제 원인은 둘 다 아니었다
+  (아래).
 - **관문 2 (툴체인) 도 이미 끝나 있다** — `toolchain/gcc-src/INSTALL/bin/tricore-elf-gcc`
   (11.3.1) 가 빌드되어 있다
 
@@ -34,8 +32,37 @@
 무조건 참조되던 버그 — 다른 전송(TCP/UDP/BT/…)과 같은 방식으로 `#if` 로 감쌈).
 ESP32-S3(a4:cb:8f:e7:f0:bc) 에 실제로 컴파일·플래시·부팅 확인함 — **FQBN 에
 `CDCOnBoot=cdc` 를 빠뜨리면 보드가 부팅은 하지만 USB 시리얼 출력이 전혀 안 나온다**
-(크래시가 아니라 무음이었다, 헷갈리기 좋음). W5500 SPI 핀(`zenoh_bridge.cpp` 상단
-`W5500_PIN_*`)은 실측이 아니라 **일반적인 추정값** — 실제 배선 확인 필요.
+(크래시가 아니라 무음이었다, 헷갈리기 좋음). W5500 SPI 핀은 esp32-lidar/firmware/
+lidar_probe (keti-reconfig 가 실측한 핀아웃: SCK=48/MISO=47/MOSI=21/CS=45, INT·RST
+없음)의 `eth_w5500.h`/`w5500_spi.h` 를 그대로 재사용 — Arduino `ETH.begin()` 은 10ms
+MAC 폴링이 박혀 있고 IDF W5500 드라이버 자체에 16KB RX 버퍼 랩어라운드 버그가 있어서
+일부러 안 씀. **실기에서 링크업 확인됨**(100Mbit full-duplex, IP 192.168.50.2) —
+AURIX 쪽에 아직 아무 펌웨어도 없는데도 PHY 링크가 뜬 것으로 봐서 두 보드가 랜 케이블로
+이미 물려 있다.
+
+### 2026-09-21 계속 — 진짜 원인은 `ftdi_sio`, 그리고 32바이트 전송 한계
+
+USB 케이블을 완전히 뽑았다 다시 꽂고, `/dev/bus/usb/001/0xx` 권한(udev 규칙
+`/etc/udev/rules.d/99-infineon-tas.rules`, `058b:0043` → `MODE="0666"`)까지 고친
+뒤에도 `No targets to connect` 가 계속됐다. `strace -f -p <tas_server pid>` 로
+잡은 진짜 원인: **커널 `ftdi_sio` 가 미니위글러의 UART 채널(`1-4:1.1`, `/dev/ttyUSB0`)
+을 이미 바인드하고 있어서 TAS 의 `USBDEVFS_CLAIMINTERFACE` 가 `EBUSY` 로 실패**했다
+(채널 A 는 원래부터 안 잡혀 있었다). `echo -n 1-4:1.1 > /sys/bus/usb/drivers/ftdi_sio/unbind`
+로 풀자 cpu0~5+cpucs 전부 다시 examine 성공.
+
+그런데 이어서 실제 메모리 접근을 해보니 **한 번의 읽기가 32바이트(8워드)를 넘으면
+무조건 실패한다** (`mdw 0x80000000 8` 성공, `mdw 0x80000000 9` 부터 실패 — 여러 번
+재현). `tools/openocd/src/target/aurix/tricore.c` 의 `ocmts_queue_read_block` 은
+소프트웨어 단에서 최대 256워드까지 청크로 나누지만, 그보다 아래(DAP 자체의 버스트
+전송) 어딘가에서 32바이트 넘는 요청이 깨진다 — 오늘 06:04 에 막 빌드된 dev 스냅샷의
+미완성 지점으로 보인다. 이 한계 안에서는:
+- **20MB 플래시 전체 백업은 32바이트 × 65만 번 왕복이 되어 비현실적**
+- **플래시 굽기도 막힌다** — OpenOCD 의 flash write 는 보통 작은 알고리즘을 work-area
+  RAM 에 먼저 올려 실행시키는데, 그 업로드 자체가 32바이트보다 크다
+
+**결론: 디버그 연결(examine)까지는 확실히 된다. 그 이상(백업/굽기)은 이 dev 빌드가
+아직 못 버틴다.** 다음에 재개한다면 `tricore-oss/openocd` 에 이후 커밋(수정)이 있는지
+먼저 확인할 것 — 지금 커밋을 더 파고드는 건 시간 대비 소득이 낮다고 판단해 멈췄다.
 
 ## 원래 목표와 판정 (2026-09-04, TSN 트래픽 젠 용도 — 아래는 그 판정만 다룬다)
 
