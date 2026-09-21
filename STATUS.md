@@ -1,6 +1,43 @@
-# 상태와 결정 (2026-09-04)
+# 상태와 결정 (2026-09-04, 2026-09-21 갱신)
 
-## 원래 목표와 판정
+## 2026-09-21 업데이트 — 관문 1(굽기)이 다시 열렸다, 목표도 바뀌었다
+
+새 목표: TSN 트래픽 제너레이터가 아니라 **AURIX TC4D7 ↔ ESP32-S3(W5500) Zenoh 브리지**
+데모. 두 보드를 랜 케이블로 직결하고 zenoh-pico 로 pub/sub 하는 것이 목표다. 기가비트
+천장·errata 판정(아래 원래 판정)은 이 새 목표에는 적용되지 않는다 — CBS/TAS 트래픽
+젠 용도로는 여전히 접힌 채다.
+
+**관문 1 (굽기) 이 열렸다.** `tools/openocd` 를 오늘 아침 직접 빌드했는데(Infineon 이
+`interface/tas_client.cfg` + `target/infineon/tc4dx.cfg` 를 커밋한 dev 스냅샷,
+`0.12.0+dev-g58c6c61`), Infineon **TAS**(DAS 와 별개로 Linux 바이너리가 있는 그 도구,
+`tools/das/opt/Tools/DAS/8.3.0/bin/tas_server`) 와 물려서 **Linux 에서 TC4D7 에 실제로
+디버그 연결됐다** — cpu0~cpu5 + cpucs 전부 TriCore 1.8 로 examine 성공. 아래 "후보 2"
+문서화 당시엔 "TC4x 실증을 찾지 못했다"고 적었는데 그게 오늘 뒤집혔다.
+
+곁들여 확인된 것:
+- 함께 꽂힌 무관한 FT232 케이블이 TAS 의 "짝수 개 장치" 가정을 깨서 `FT_Open` 이 깨졌다
+  — `scripts/tas_ftdi_filter.c` (LD_PRELOAD, Infineon VID/PID 만 통과) 로 우회
+- **PFLASH0 은 캐시드 별칭(`0x80000000`)으로는 읽힌다. 비캐시드 별칭(`0xa0000000`,
+  `.lsl` 의 `pfls0_nc`)으로는 `TAS PL0 mem request failed` 로 실패한다.** 원인 미확인
+  (OCDS 락 추정은 아님 — 캐시드 쪽은 halt 상태에서 바로 읽힘)
+- 비캐시드 주소 접근이 한 번 실패한 뒤로 세션이 `No targets to connect` 로 재연결이
+  안 된다. USB 리셋(`usbreset 058b:0043`)으로도 안 풀린다 — README 가 이미 적어 둔 대로
+  **`/PORST` 는 사람이 RESET 버튼을 눌러야 한다(소프트웨어 리셋 경로 없음)**. 재개하려면
+  이 버튼을 누른 뒤 `tools/das/... tas_server` 를 다시 띄우고 `0x80000000` 부터 다시
+  시도할 것 — `0xa0000000` 류 비캐시드 주소는 당분간 건드리지 말 것
+- **관문 2 (툴체인) 도 이미 끝나 있다** — `toolchain/gcc-src/INSTALL/bin/tricore-elf-gcc`
+  (11.3.1) 가 빌드되어 있다
+
+**ESP32 쪽 (`apps/esp32_zenoh_w5500/`)**: zenoh-pico 를 Arduino 라이브러리로 조립하는
+`scripts/50-build-zenoh-arduino-lib.sh` 작성, vendor/zenoh-pico 에 작은 패치 3개
+(link.c/endpoint.c/transport 쪽 raweth 심볼이 `Z_FEATURE_RAWETH_TRANSPORT=0` 에서도
+무조건 참조되던 버그 — 다른 전송(TCP/UDP/BT/…)과 같은 방식으로 `#if` 로 감쌈).
+ESP32-S3(a4:cb:8f:e7:f0:bc) 에 실제로 컴파일·플래시·부팅 확인함 — **FQBN 에
+`CDCOnBoot=cdc` 를 빠뜨리면 보드가 부팅은 하지만 USB 시리얼 출력이 전혀 안 나온다**
+(크래시가 아니라 무음이었다, 헷갈리기 좋음). W5500 SPI 핀(`zenoh_bridge.cpp` 상단
+`W5500_PIN_*`)은 실측이 아니라 **일반적인 추정값** — 실제 배선 확인 필요.
+
+## 원래 목표와 판정 (2026-09-04, TSN 트래픽 젠 용도 — 아래는 그 판정만 다룬다)
 
 **목표**: LAN9662 / 9692 TSN 검증용 정밀 트래픽 제너레이터 (talker + 하드웨어 타임스탬프 listener)
 

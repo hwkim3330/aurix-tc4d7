@@ -5,8 +5,12 @@ Infineon **KIT_A3G_TC4D7_LITE** (AURIX TC4Dx, TriCore 1.8P) 를 **Linux 호스�
 
 > **판정 (2026-09-04)**: 원래 목표였던 **TSN 트래픽 제너레이터로는 쓸 수 없다.**
 > 100 Mbps 천장(영구) + errata 가 정밀도를 깎음 + Zephyr 에 GETH 드라이버 없음.
-> 그리고 **굽는 경로가 미해결**이라 현재 보드에서 코드를 실행할 수 없다.
-> 근거와 재개 조건은 → **[STATUS.md](STATUS.md)**
+>
+> **업데이트 (2026-09-21)**: 목표가 **AURIX↔ESP32(W5500) Zenoh 브리지** 데모로 바뀌었고,
+> 그 목표 기준으로는 **굽는 경로가 뚫렸다** — Infineon TAS + 오늘 빌드한 OpenOCD 로
+> Linux 에서 TC4D7 에 디버그 연결 성공(cpu0~5+cpucs). 다만 지금은 리셋 버튼을 눌러야
+> 재개되는 상태로 멈춰 있다. 근거와 재개 조건은 → **[STATUS.md](STATUS.md)**,
+> ESP32 쪽 진행 상황은 → **[apps/esp32_zenoh_w5500/](apps/esp32_zenoh_w5500/)**
 
 ## 문서
 

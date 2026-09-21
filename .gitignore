@@ -16,5 +16,24 @@ build-*/
 *.log
 logs/
 
+# 플래시 덤프 (백업본, 실기에서만 의미 있음 — 공개 레포에 올리지 않는다)
+backups/
+
+# 큰/독점 벤더 트리 — 각자 별도 공개 저장소를 clone 하거나(illd-tc4x, openocd,
+# aurix-flasher) Infineon/FTDI 에서 직접 받아야 하는(das, ftdi) 도구들.
+# scripts/05-fetch-vendor.sh 가 clone 가능한 것들을 재생성한다.
+vendor/illd-tc4x/
+tools/das/
+tools/ftdi/
+tools/openocd/
+tools/openocd-install/
+tools/aurix-flasher/
+tools/tricore-toolchain/
+
+# vendor/zenoh-pico 는 예외 — 작고(수 MB) 우리가 로컬 패치를 얹었으므로 커밋해 둔다.
+
+# zenoh-pico 를 Arduino 라이브러리 형태로 조립한 산출물 (scripts/50-*.sh 로 재생성)
+apps/esp32_zenoh_w5500/lib/
+
 __pycache__/
 .venv/
