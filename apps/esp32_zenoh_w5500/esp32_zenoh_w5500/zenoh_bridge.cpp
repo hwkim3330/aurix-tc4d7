@@ -6,29 +6,30 @@
 // scripts/50-build-zenoh-arduino-lib.sh at the repo root) and pulled in via
 // `arduino-cli compile --library apps/esp32_zenoh_w5500/lib/zenoh-pico`.
 //
-// CONFIRM BEFORE FLASHING: the SPI/CS/IRQ/RST pins below match this
-// machine's *generic* ESP32-S3 DevKit + W5500 breakout wiring guess, not a
-// measurement of the actual board. Adjust to match the real wiring.
+// The W5500 bring-up (eth_w5500.h / w5500_spi.h) and its pin mapping are
+// carried over from esp32-lidar/firmware/lidar_probe verbatim: raw
+// esp_eth + esp_netif instead of Arduino's ETH class, because ETH.begin
+// hardcodes a 10ms MAC poll period with no way to change it afterwards, and
+// the IDF driver's own buffer-read has a real bug at the W5500's 16kB
+// receive-buffer wrap that w5500_spi.h works around. Do not switch back to
+// ETH.begin() to "simplify" this. Pinout is keti-reconfig's measured one,
+// not a datasheet default -- see the comment in lidar_probe.ino.
 #include "zenoh_bridge.h"
 
 #include <Arduino.h>
-#include <ETH.h>
-#include <SPI.h>
 #include <zenoh-pico.h>
 
-// ---- W5500 SPI wiring (adjust to match the physical board) ----
-#define W5500_PIN_SCK 12
-#define W5500_PIN_MISO 13
-#define W5500_PIN_MOSI 11
-#define W5500_PIN_CS 10
-#define W5500_PIN_IRQ 14
-#define W5500_PIN_RST 9
-#define W5500_PHY_ADDR 1
+#include "eth_w5500.h"
+
+W5500Spi *gW5500Spi = nullptr;  // defined here; w5500_spi.h only declares it extern
+
+// ---- W5500 SPI wiring (esp32-lidar/firmware/lidar_probe/lidar_probe.ino) ----
+constexpr int kSck = 48, kMosi = 21, kCs = 45, kMiso = 47;  // no INT, no RST wired
 
 // ---- Direct-link static addressing (AURIX side must use .1) ----
 static const IPAddress kLocalIP(192, 168, 50, 2);
+static const IPAddress kMask(255, 255, 255, 0);
 static const IPAddress kGateway(192, 168, 50, 2);  // no router; loops to self
-static const IPAddress kSubnet(255, 255, 255, 0);
 #define AURIX_LOCATOR "udp/192.168.50.1:7447"
 
 #define PUB_KEYEXPR "aurix/bridge/esp32"
@@ -37,30 +38,8 @@ static const IPAddress kSubnet(255, 255, 255, 0);
 static z_owned_session_t s_session;
 static z_owned_publisher_t s_pub;
 static z_owned_subscriber_t s_sub;
-static volatile bool s_eth_up = false;
+static bool s_zenoh_up = false;
 static uint32_t s_idx = 0;
-
-static void onEthEvent(arduino_event_id_t event) {
-  switch (event) {
-    case ARDUINO_EVENT_ETH_START:
-      Serial.println("[eth] started");
-      ETH.setHostname("esp32-zenoh-bridge");
-      break;
-    case ARDUINO_EVENT_ETH_CONNECTED:
-      Serial.println("[eth] link up");
-      break;
-    case ARDUINO_EVENT_ETH_GOT_IP:
-      Serial.printf("[eth] got IP: %s\n", ETH.localIP().toString().c_str());
-      s_eth_up = true;
-      break;
-    case ARDUINO_EVENT_ETH_DISCONNECTED:
-      Serial.println("[eth] link down");
-      s_eth_up = false;
-      break;
-    default:
-      break;
-  }
-}
 
 static void dataHandler(z_loaned_sample_t *sample, void *arg) {
   (void)arg;
@@ -119,29 +98,33 @@ void zenohBridgeSetup() {
     delay(10);
   }
 
-  Network.onEvent(onEthEvent);
-  SPI.begin(W5500_PIN_SCK, W5500_PIN_MISO, W5500_PIN_MOSI, W5500_PIN_CS);
-  if (!ETH.begin(ETH_PHY_W5500, W5500_PHY_ADDR, W5500_PIN_CS, W5500_PIN_IRQ, W5500_PIN_RST, SPI)) {
-    Serial.println("[eth] ETH.begin() failed");
+  if (!ethStart(kSck, kMiso, kMosi, kCs, /*pollPeriodMs=*/1, kLocalIP, kMask, kGateway)) {
+    Serial.println("[eth] ethStart() failed");
   }
-  ETH.config(kLocalIP, kGateway, kSubnet);
 
   Serial.print("[eth] waiting for link");
-  while (!s_eth_up) {
+  while (!ethLinkUp()) {
     Serial.print(".");
     delay(500);
   }
-  Serial.println();
-
-  while (!startZenoh()) {
-    delay(2000);
-  }
+  Serial.printf("\n[eth] link up, %u Mbit %s-duplex, IP %s, MAC %s\n", ethLinkSpeed(),
+                ethFullDuplex() ? "full" : "half", ethLocalIP().toString().c_str(),
+                ethMacAddress().c_str());
 }
 
 void zenohBridgeLoop() {
-  if (!s_eth_up) {
+  if (!ethLinkUp()) {
+    s_zenoh_up = false;
     delay(500);
     return;
+  }
+
+  if (!s_zenoh_up) {
+    s_zenoh_up = startZenoh();
+    if (!s_zenoh_up) {
+      delay(2000);
+      return;
+    }
   }
 
   delay(1000);
